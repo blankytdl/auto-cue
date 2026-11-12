@@ -9,7 +9,7 @@ if (!(Test-Path -LiteralPath $servicePath)) {
 
 $source = [System.IO.File]::ReadAllText($servicePath)
 if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3")) {
-    Write-Host "Llama Prism compatibility patch v2 already applied."
+    Write-Host "Llama Prism compatibility patch v3 already applied."
     return
 }
 
@@ -18,11 +18,11 @@ if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3")) {
 # AutoCua's public helper when OLLAMA_HOST is not already in the process env.
 $hostPattern = '(?m)^(\s*)raw = \(os\.getenv\("OLLAMA_HOST"\) or ""\)\.strip\(\)\.strip\(.*\)$'
 $hostReplacement = @'
-$1raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"'")
+$1raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\"'")
     if not raw:
         try:
             from AutoCua import read_env
-            raw = (read_env().get("OLLAMA_HOST") or "").strip().strip("\\"'")
+            raw = (read_env().get("OLLAMA_HOST") or "").strip().strip("\"'")
         except Exception:
             pass
 '@
