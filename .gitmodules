@@ -1,0 +1,3 @@
+[submodule "AutoCua"]
+	path = AutoCua
+	url = https://github.com/ComputerUseAgent/AutoCua.git
