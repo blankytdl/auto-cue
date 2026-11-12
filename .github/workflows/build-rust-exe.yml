@@ -92,6 +92,9 @@ jobs:
           [System.IO.File]::WriteAllText($browserRs, $patched, [System.Text.UTF8Encoding]::new($false))
           Write-Host "Applied Windows-only compile fix to upstream browser.rs"
 
+          # Add the OpenAI-compatible model discovery fallback for llama-prism.
+          & .\patches\enable-llama-prism.ps1
+
           # Install from the pinned upstream checkout. This builds AutoCua's
           # PyO3/maturin Rust extension and installs pyproject dependencies
           # plus the upstream Windows requirements into the bundled runtime.
@@ -122,6 +125,18 @@ jobs:
 
           Add your supported model-provider credentials through the app settings
           or the .env file above. Model/API access still requires your provider.
+
+          
+          Local llama-prism / llama.cpp:
+            1. Start llama-server.exe on this PC, for example with --host 127.0.0.1 --port 8080 --jinja.
+            2. Add this line to %APPDATA%\AutoCua_data\.env:
+                 OLLAMA_HOST=127.0.0.1:8080
+            3. Restart AutoCua, select provider "ollama", then select the model
+               ID shown by llama-server at http://127.0.0.1:8080/v1/models.
+
+          AutoCua's local-provider adapter has an OpenAI-compatible discovery
+          fallback for llama-prism. Tool calls require a model chat template
+          that supports tools; screen control also requires vision and its mmproj.
 
           The upstream AutoCua project does not bundle Google Chrome. Install Chrome
           separately only if you use AutoCua's browser/web-agent mode. The Windows
