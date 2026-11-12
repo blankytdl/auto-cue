@@ -18,6 +18,29 @@ No runtime dependencies are downloaded or reinstalled. This update is not a fres
 
 For local llama.cpp / Llama Prism, put `OLLAMA_HOST=127.0.0.1:8080` in `%APPDATA%\AutoCua_data\.env`, start llama-prism with a tool-capable chat template (usually `--jinja`), then restart AutoCua and choose provider `ollama`.
 
+## Edge, Brave and other browsers
+
+The browser agent uses Chromium DevTools Protocol plus AutoCua's Chrome-compatible extension. The original build's Rust browser selector already recognized Edge as a fallback, but its Python pre-check only recognized Chrome. The incremental update fixes both layers and adds support for:
+
+- Microsoft Edge
+- Brave
+- Google Chrome and Chromium
+- Vivaldi
+- Opera and Opera GX
+- Yandex Browser
+
+The update auto-detects the first installed browser in that order (Chrome first). To use Edge or Brave even when Chrome is also installed, set an explicit executable path in `%APPDATA%\\AutoCua_data\\.env`:
+
+```dotenv
+AUTOCUA_BROWSER=C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe
+```
+
+For Edge, use the path to `msedge.exe`; for Brave, use `brave.exe`. The path must point to the browser's executable. The setting is optional; the app also checks common install folders, Windows App Paths registry entries, and PATH.
+
+For the existing portable build, download the `AutoCua-MultiBrowser-Update` artifact from the [multi-browser update workflow](https://github.com/blankytdl/auto-cue/actions/workflows/build-browser-update.yml), extract it, close AutoCua, and run `Apply-MultiBrowser-Update.ps1`. Enter the folder containing `autocua.exe`. It backs up and replaces only `agent_native.pyd` and `utils\\chrome.py`; Python, DLL dependencies and installed packages are untouched.
+
+**Firefox and Safari are not supported by this backend.** It relies on Chromium's DevTools Protocol and Chrome-compatible extension APIs; supporting browsers with different automation protocols requires a separate backend.
+
 ## Full portable download
 
 Open **Actions → Build AutoCua Portable Windows App → Artifacts** and download **AutoCua-Windows-x64-Portable**. Extract the entire ZIP folder and run `autocua.exe`.
@@ -37,7 +60,7 @@ Bundled:
 
 Not bundled:
 - Model-provider API keys or accounts. Configure credentials in the AutoCua UI or `%APPDATA%\AutoCua_data\.env`.
-- Google Chrome. Upstream AutoCua does not install Chrome; install it separately only for browser/web-agent use.
+- A Chromium-based browser for browser/web-agent use (Edge, Brave, Chrome, Chromium, Vivaldi, Opera or Yandex Browser). AutoCua does not install browsers.
 - Windows WebView2 Runtime, which is an OS-level webview prerequisite.
 
 The portable package contains the upstream license and third-party notices. Kernel-level optional drivers are not silently installed.
