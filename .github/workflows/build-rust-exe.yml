@@ -1,4 +1,4 @@
-name: Build AutoCua Rust EXE
+name: Build AutoCua Portable Windows App
 
 on:
   push:
@@ -13,10 +13,10 @@ permissions:
 
 jobs:
   windows-x64:
-    name: Build Windows x64 executable
+    name: Bundle dependencies and build Windows x64 app
     runs-on: windows-latest
     steps:
-      - name: Check out repository and upstream AutoCua submodule
+      - name: Check out repository and pinned upstream AutoCua source
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -26,23 +26,100 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Build release executable
-        run: cargo build --manifest-path rust-launcher/Cargo.toml --release --target x86_64-pc-windows-msvc
+      - name: Set up Python used only for packaging
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: AutoCua/requirements_windows.txt
 
-      - name: Create checksum
+      - name: Prepare portable Python runtime and install all Windows dependencies
         shell: pwsh
         run: |
-          $exe = "rust-launcher/target/x86_64-pc-windows-msvc/release/autocua.exe"
-          if (!(Test-Path $exe)) { throw "Build did not create $exe" }
-          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
-          "$hash  autocua.exe" | Set-Content -Encoding ascii SHA256SUMS.txt
+          $ErrorActionPreference = "Stop"
+          $bundle = Join-Path $PWD "dist\AutoCua-Windows-x64"
+          $runtime = Join-Path $bundle "runtime"
+          $site = Join-Path $runtime "Lib\site-packages"
+          New-Item -ItemType Directory -Force -Path $bundle, $runtime, $site | Out-Null
 
-      - name: Upload Windows executable
+          # Copy the full CPython installation from the GitHub runner. The
+          # runtime ships with the app; end users do not install Python.
+          $pythonExe = (Get-Command python).Source
+          $pythonRoot = Split-Path $pythonExe -Parent
+          Write-Host "Bundling CPython from $pythonRoot"
+          Copy-Item -Path (Join-Path $pythonRoot "*") -Destination $runtime -Recurse -Force
+
+          # Keep the Windows runtime dependency list, but omit Nuitka: this
+          # project uses a Rust launcher, not Nuitka, to produce the EXE.
+          $requirements = Join-Path $env:RUNNER_TEMP "autocua-windows-runtime-requirements.txt"
+          Get-Content "AutoCua\requirements_windows.txt" |
+            Where-Object { $_ -notmatch '^\s*nuitka(\s|[<=>!~;\[]|$)' } |
+            Set-Content -Encoding utf8 $requirements
+
+          # Install from the pinned upstream checkout. This builds AutoCua's
+          # PyO3/maturin Rust extension and installs pyproject dependencies
+          # plus the upstream Windows requirements into the bundled runtime.
+          python -m pip install --disable-pip-version-check --target $site --ignore-installed --no-compile -r $requirements .
+          if ($LASTEXITCODE -ne 0) { throw "AutoCua/dependency installation failed" }
+
+          # Run a smoke test against the COPIED runtime, not the runner Python.
+          $env:PYTHONHOME = $runtime
+          $env:PYTHONPATH = $site
+          $env:PYTHONUTF8 = "1"
+          $env:PATH = "$runtime;$runtime\DLLs;$runtime\Scripts;$site;$site\PySide6;$site\PySide6\Qt\bin;$env:PATH"
+          & (Join-Path $runtime "python.exe") -c "import AutoCua.agent_launcher, dotenv, webview, PySide6, win32api, comtypes, keyboard, pyautogui, flask, PIL, numpy; print('Portable runtime smoke test passed')"
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Python runtime failed its import smoke test" }
+
+          Copy-Item "AutoCua\LICENSE" "$bundle\LICENSE-AutoCua.txt"
+          Copy-Item "AutoCua\THIRD_PARTY_NOTICES.md" "$bundle\THIRD_PARTY_NOTICES.md"
+          Copy-Item "AutoCua\THIRD_PARTY_LICENSES.txt" "$bundle\THIRD_PARTY_LICENSES.txt"
+          @"
+          AutoCua portable Windows x64
+          =============================
+
+          Extract the COMPLETE ZIP, then run autocua.exe.
+          Python 3.13 and AutoCua's Python dependencies are already included.
+          The app does not download Python, uv, pip packages, or AutoCua on first launch.
+
+          User data and .env credentials:
+            %APPDATA%\AutoCua_data\
+
+          Add your supported model-provider credentials through the app settings
+          or the .env file above. Model/API access still requires your provider.
+
+          The upstream AutoCua project does not bundle Google Chrome. Install Chrome
+          separately only if you use AutoCua's browser/web-agent mode. The Windows
+          WebView2 Runtime is also an operating-system webview prerequisite.
+
+          This portable bundle contains the upstream AutoCua project and third-party
+          notices. See the repository README for source and update information.
+          "@ | Set-Content -Encoding utf8 "$bundle\README.txt"
+
+      - name: Build native Rust launcher
+        run: cargo build --manifest-path rust-launcher/Cargo.toml --release --target x86_64-pc-windows-msvc
+
+      - name: Assemble portable ZIP and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = Join-Path $PWD "dist\AutoCua-Windows-x64"
+          $exe = "rust-launcher\target\x86_64-pc-windows-msvc\release\autocua.exe"
+          if (!(Test-Path $exe)) { throw "Rust build did not create $exe" }
+          Copy-Item $exe "$bundle\autocua.exe" -Force
+
+          $zip = Join-Path $PWD "AutoCua-Windows-x64-Portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$bundle\*" -DestinationPath $zip -CompressionLevel Optimal
+
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          "$hash  AutoCua-Windows-x64-Portable.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+
+      - name: Upload complete portable application
         uses: actions/upload-artifact@v4
         with:
-          name: AutoCua-Windows-x64
+          name: AutoCua-Windows-x64-Portable
           path: |
-            rust-launcher/target/x86_64-pc-windows-msvc/release/autocua.exe
+            AutoCua-Windows-x64-Portable.zip
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -52,6 +129,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            rust-launcher/target/x86_64-pc-windows-msvc/release/autocua.exe
+            AutoCua-Windows-x64-Portable.zip
             SHA256SUMS.txt
           generate_release_notes: true
