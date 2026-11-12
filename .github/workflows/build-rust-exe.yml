@@ -86,7 +86,8 @@ jobs:
             '        live_browser_pid(pid)',
             '    }',
             '}',
-          ) -join "`n"          $patched = [regex]::Replace($source, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
+          ) -join "`n"
+          $patched = [regex]::Replace($source, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
           if ($patched -eq $source) { throw "Could not apply the Windows cfg fix to $browserRs; upstream source layout changed." }
           [System.IO.File]::WriteAllText($browserRs, $patched, [System.Text.UTF8Encoding]::new($false))
           Write-Host "Applied Windows-only compile fix to upstream browser.rs"
