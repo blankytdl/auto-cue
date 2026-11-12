@@ -69,8 +69,6 @@ pub(crate) fn find_chrome() -> SResult<PathBuf> {
             "no supported Chromium-based browser found; install Edge, Brave, Chrome, Chromium, Vivaldi, Opera or Yandex Browser"
         ))
 }
-
-/// The user agent a headful run of this browser sends, for a headless run to
 '@
 
     $patched2 = [regex]::Replace(
