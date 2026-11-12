@@ -35,6 +35,15 @@ if (!(Test-Path -LiteralPath $backup)) {
 }
 Copy-Item -LiteralPath $payload -Destination $target -Force
 
+# Fail loudly if the installed adapter is not the Llama Prism build. This
+# catches wrong payloads, wrong install paths and incomplete ZIP extraction.
+$installedSource = [System.IO.File]::ReadAllText($target)
+if (!$installedSource.Contains("LLAMA_PRISM_OPENAI_COMPAT") -or
+    !$installedSource.Contains("/v1/models")) {
+    throw "The copied provider module failed Llama Prism verification: $target"
+}
+Write-Host "Verified Llama Prism model discovery in: $target"
+
 # Use the Llama Prism endpoint the portable setup expects, but never
 # overwrite an endpoint the user has already configured.
 $dataDir = Join-Path $env:APPDATA "AutoCua_data"
