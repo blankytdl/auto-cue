@@ -156,13 +156,13 @@ if (!$script.Contains("AUTOCUA_RECORDING_DEFAULT_OFF_V1")) {
     if (!$script.Contains($jsAnchor)) { throw "Could not locate the Settings JavaScript insertion point in ui/script.js." }
     $script = $script.Replace($jsAnchor, $jsInsert + $jsAnchor)
 }
-$nl = [string][char]10
-$openAnchor = "            loadKeyStatus();" + $nl + "            loadOllamaStatus();"
-$openReplacement = "            loadKeyStatus();" + $nl + "            loadRecordingSetting();" + $nl + "            loadOllamaStatus();"
-if ($script.Contains($openAnchor)) {
-    $script = $script.Replace($openAnchor, $openReplacement)
-} elseif (!$script.Contains("            loadRecordingSetting();")) {
-    throw "Could not connect recording preference loading to the Settings open event."
+$openEventAnchor = "        document.addEventListener('open-settings', () => {"
+if (!$script.Contains("            loadRecordingSetting();")) {
+    if (!$script.Contains($openEventAnchor)) {
+        throw "Could not locate the unique Settings open event in ui/script.js."
+    }
+    $nl = [string][char]10
+    $script = $script.Replace($openEventAnchor, $openEventAnchor + $nl + "            loadRecordingSetting();")
 }
 
 # Compact switch styling consistent with the existing Settings UI.
