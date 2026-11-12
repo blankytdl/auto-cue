@@ -10,7 +10,7 @@ if (!(Test-Path -LiteralPath $servicePath)) {
 $source = [System.IO.File]::ReadAllText($servicePath)
 if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT")) {
     Write-Host "Llama Prism compatibility patch already applied."
-    exit 0
+    return
 }
 
 $pattern = '(?ms)^def reachable\(timeout: float = 1\.0\) -> bool:.*?(?=^class OllamaProvider:)'
