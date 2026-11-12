@@ -8,6 +8,49 @@ foreach ($path in @($rustPath, $pythonPath)) {
 }
 
 $rust = [System.IO.File]::ReadAllText($rustPath)
+
+# The pinned upstream code uses cfg!(windows), which still type-checks its
+# Unix-only process helpers on Windows. Preserve the Windows install check and
+# compile the process-list fallback only on Unix.
+if (!$rust.Contains("AUTOCUA_WINDOWS_CFG_FIX")) {
+    $profilePattern = 'pub\\(crate\\) fn profile_locked_by_live_chrome\\(profile: &PathBuf\\) -> bool \\{[\\s\\S]*?\\n\\}'
+    $profileReplacement = @(
+        'pub(crate) fn profile_locked_by_live_chrome(profile: &PathBuf) -> bool {',
+        '    #[cfg(windows)]',
+        '    {',
+        '        return std::fs::OpenOptions::new()',
+        '            .write(true)',
+        '            .open(profile.join("lockfile"))',
+        '            .is_err_and(|e| e.raw_os_error() == Some(32));',
+        '    }',
+        '',
+        '    #[cfg(unix)]',
+        '    {',
+        '        let target = match std::fs::read_link(profile.join("SingletonLock")) {',
+        '            Ok(target) => target,',
+        '            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,',
+        '            Err(_) => return chrome_main_pid_on(profile).is_some(),',
+        '        };',
+        '        let text = target.to_string_lossy().to_string();',
+        '        let Some(pid) = text.rsplit(''-'').next().and_then(|p| p.parse::<u32>().ok()) else {',
+        '            return false;',
+        '        };',
+        '        live_browser_pid(pid)',
+        '    }',
+        '}'
+    ) -join "`n"
+    $fixedRust = [regex]::Replace(
+        $rust, $profilePattern,
+        [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $profileReplacement },
+        1
+    )
+    if ($fixedRust -eq $rust) {
+        throw "Could not apply upstream Windows cfg fix to profile_locked_by_live_chrome."
+    }
+    $rust = "// AUTOCUA_WINDOWS_CFG_FIX" + [Environment]::NewLine + $fixedRust
+    [System.IO.File]::WriteAllText($rustPath, $rust, [System.Text.UTF8Encoding]::new($false))
+}
+
 if (!$rust.Contains("AUTOCUA_MULTI_BROWSER_SUPPORT")) {
     $relativePattern = '(?ms)^const CHROME_RELATIVE_WIN:.*?^];'
     $relativeReplacement = @'
