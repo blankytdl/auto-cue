@@ -1,19 +1,21 @@
-name: Build AutoCua Portable Windows App
+name: Build AutoCua Llama Prism Update
 
 on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: autocua-llama-prism-update-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  windows-x64:
-    name: Bundle dependencies and build Windows x64 app
+  windows-x64-update:
+    name: Build dependency-free update for existing portable install
     runs-on: windows-latest
     steps:
       - name: Check out repository and pinned upstream AutoCua source
@@ -21,165 +23,73 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install stable Rust MSVC toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Set up Python used only for packaging
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: AutoCua/requirements_windows.txt
-
-      - name: Prepare portable Python runtime and install all Windows dependencies
+      - name: Patch AutoCua's Ollama adapter for llama.cpp / Llama Prism
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $bundle = Join-Path $PWD "dist\AutoCua-Windows-x64"
-          $runtime = Join-Path $bundle "runtime"
-          $site = Join-Path $runtime "Lib\site-packages"
-          New-Item -ItemType Directory -Force -Path $bundle, $runtime, $site | Out-Null
-
-          # Copy the full CPython installation from the GitHub runner. The
-          # runtime ships with the app; end users do not install Python.
-          $pythonExe = (Get-Command python).Source
-          $pythonRoot = Split-Path $pythonExe -Parent
-          Write-Host "Bundling CPython from $pythonRoot"
-          Copy-Item -Path (Join-Path $pythonRoot "*") -Destination $runtime -Recurse -Force
-
-          # Keep the Windows runtime dependency list, but omit Nuitka: this
-          # project uses a Rust launcher, not Nuitka, to produce the EXE.
-          $requirements = Join-Path $env:RUNNER_TEMP "autocua-windows-runtime-requirements.txt"
-          Get-Content "AutoCua\requirements_windows.txt" |
-            Where-Object { $_ -notmatch '^\s*nuitka(\s|[<=>!~;\[]|$)' } |
-            Set-Content -Encoding utf8 $requirements
-
-          # Upstream browser.rs uses cfg!(windows) for a branch which
-          # still type-checks Unix-only helpers on Windows. Make that branch
-          # compile-time conditional before maturin compiles the PyO3 module.
-          $browserRs = "AutoCua\AutoCua\web\browser\browser.rs"
-          $source = [System.IO.File]::ReadAllText($browserRs)
-          $pattern = 'pub\(crate\) fn profile_locked_by_live_chrome\(profile: &PathBuf\) -> bool \{[\s\S]*?\n\}'
-          $replacement = @(
-            'pub(crate) fn profile_locked_by_live_chrome(profile: &PathBuf) -> bool {',
-            '    #[cfg(windows)]',
-            '    {',
-            '        return std::fs::OpenOptions::new()',
-            '            .write(true)',
-            '            .open(profile.join("lockfile"))',
-            '            .is_err_and(|e| e.raw_os_error() == Some(32));',
-            '    }',
-            '',
-            '    #[cfg(unix)]',
-            '    {',
-            '        let target = match std::fs::read_link(profile.join("SingletonLock")) {',
-            '            Ok(target) => target,',
-            '            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,',
-            '            Err(_) => return chrome_main_pid_on(profile).is_some(),',
-            '        };',
-            '        let text = target.to_string_lossy().to_string();',
-            '        let Some(pid) = text.rsplit(''-'').next().and_then(|p| p.parse::<u32>().ok()) else {',
-            '            return false;',
-            '        };',
-            '        live_browser_pid(pid)',
-            '    }',
-            '}'
-          ) -join "`n"
-          $patched = [regex]::Replace($source, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
-          if ($patched -eq $source) { throw "Could not apply the Windows cfg fix to $browserRs; upstream source layout changed." }
-          [System.IO.File]::WriteAllText($browserRs, $patched, [System.Text.UTF8Encoding]::new($false))
-          Write-Host "Applied Windows-only compile fix to upstream browser.rs"
-
-          # Add the OpenAI-compatible model discovery fallback for llama-prism.
           & .\patches\enable-llama-prism.ps1
 
-          # Install from the pinned upstream checkout. This builds AutoCua's
-          # PyO3/maturin Rust extension and installs pyproject dependencies
-          # plus the upstream Windows requirements into the bundled runtime.
-          python -m pip install --disable-pip-version-check --target $site --ignore-installed --no-compile -r $requirements .\AutoCua
-          if ($LASTEXITCODE -ne 0) { throw "AutoCua/dependency installation failed" }
-
-          # Run a smoke test against the COPIED runtime, not the runner Python.
-          $env:PYTHONHOME = $runtime
-          $env:PYTHONPATH = $site
-          $env:PYTHONUTF8 = "1"
-          $env:PATH = "$runtime;$runtime\DLLs;$runtime\Scripts;$site;$site\pywin32_system32;$site\PySide6;$site\PySide6\Qt\bin;$env:PATH"
-          & (Join-Path $runtime "python.exe") -c "import AutoCua.agent_launcher, dotenv, webview, PySide6, win32api, comtypes, keyboard, pyautogui, flask, PIL, numpy; print('Portable runtime smoke test passed')"
-          if ($LASTEXITCODE -ne 0) { throw "Bundled Python runtime failed its import smoke test" }
-
-          Copy-Item "AutoCua\LICENSE" "$bundle\LICENSE-AutoCua.txt"
-          Copy-Item "AutoCua\THIRD_PARTY_NOTICES.md" "$bundle\THIRD_PARTY_NOTICES.md"
-          Copy-Item "AutoCua\THIRD_PARTY_LICENSES.txt" "$bundle\THIRD_PARTY_LICENSES.txt"
-          @"
-          AutoCua portable Windows x64
-          =============================
-
-          Extract the COMPLETE ZIP, then run autocua.exe.
-          Python 3.13 and AutoCua's Python dependencies are already included.
-          The app does not download Python, uv, pip packages, or AutoCua on first launch.
-
-          User data and .env credentials:
-            %APPDATA%\AutoCua_data\
-
-          Add your supported model-provider credentials through the app settings
-          or the .env file above. Model/API access still requires your provider.
-
-          
-          Local llama-prism / llama.cpp:
-            1. Start llama-server.exe on this PC, for example with --host 127.0.0.1 --port 8080 --jinja.
-            2. Add this line to %APPDATA%\AutoCua_data\.env:
-                 OLLAMA_HOST=127.0.0.1:8080
-            3. Restart AutoCua, select provider "ollama", then select the model
-               ID shown by llama-server at http://127.0.0.1:8080/v1/models.
-
-          AutoCua's local-provider adapter has an OpenAI-compatible discovery
-          fallback for llama-prism. Tool calls require a model chat template
-          that supports tools; screen control also requires vision and its mmproj.
-
-          The upstream AutoCua project does not bundle Google Chrome. Install Chrome
-          separately only if you use AutoCua's browser/web-agent mode. The Windows
-          WebView2 Runtime is also an operating-system webview prerequisite.
-
-          This portable bundle contains the upstream AutoCua project and third-party
-          notices. See the repository README for source and update information.
-          "@ | Set-Content -Encoding utf8 "$bundle\README.txt"
-
-      - name: Build native Rust launcher
-        run: cargo build --manifest-path rust-launcher/Cargo.toml --release --target x86_64-pc-windows-msvc
-
-      - name: Assemble portable ZIP and checksum
+      - name: Package only the changed Python module and updater
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $bundle = Join-Path $PWD "dist\AutoCua-Windows-x64"
-          $exe = "rust-launcher\target\x86_64-pc-windows-msvc\release\autocua.exe"
-          if (!(Test-Path $exe)) { throw "Rust build did not create $exe" }
-          Copy-Item $exe "$bundle\autocua.exe" -Force
+          $bundle = Join-Path $PWD "dist\AutoCua-LlamaPrism-Update"
+          $payload = Join-Path $bundle "payload\runtime\Lib\site-packages\AutoCua\llm_provider\ollama"
+          New-Item -ItemType Directory -Force -Path $payload | Out-Null
 
-          $zip = Join-Path $PWD "AutoCua-Windows-x64-Portable.zip"
+          # This is an overlay for the existing 480 MB portable build. It
+          # includes only the changed Python adapter, not Python, DLLs,
+          # installed packages, the Rust binary, or the previous runtime.
+          Copy-Item "AutoCua\AutoCua\llm_provider\ollama\service.py" (Join-Path $payload "service.py") -Force
+          Copy-Item "patches\Apply-LlamaPrism-Update.ps1" (Join-Path $bundle "Apply-LlamaPrism-Update.ps1") -Force
+
+          @"
+          AutoCua Llama Prism incremental update
+          ======================================
+
+          This ZIP is an UPDATE for an existing AutoCua-Windows-x64-Portable
+          installation. It deliberately does NOT contain Python, DLLs,
+          pip packages, the Rust launcher, or any other runtime dependency.
+
+          1. Extract this ZIP to a temporary folder.
+          2. Run Apply-LlamaPrism-Update.ps1.
+          3. When asked, enter the folder containing your existing autocua.exe.
+          4. The script backs up the old Ollama adapter and copies only the
+             updated service.py into your existing runtime.
+
+          Configure the local Llama Prism endpoint in:
+            %APPDATA%\AutoCua_data\.env
+
+          Add:
+            OLLAMA_HOST=127.0.0.1:8080
+
+          Start llama-prism / llama-server with a tool-aware chat template
+          (normally --jinja), then restart AutoCua. In Settings → Model
+          Selection choose provider "ollama" and select the model ID returned
+          by http://127.0.0.1:8080/v1/models.
+
+          Screen control also needs a vision-capable model and its matching
+          mmproj. Tool calls need a compatible tool-use chat template.
+
+          To roll back, restore the .bak file created beside service.py.
+          "@ | Set-Content -Encoding utf8 (Join-Path $bundle "README.txt")
+
+          $zip = Join-Path $PWD "AutoCua-LlamaPrism-Update.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "$bundle\*" -DestinationPath $zip -CompressionLevel Optimal
 
+          $size = (Get-Item $zip).Length
           $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
-          "$hash  AutoCua-Windows-x64-Portable.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          "$hash  AutoCua-LlamaPrism-Update.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          Write-Host "Created dependency-free update: $size bytes"
+          if ($size -gt 2MB) { throw "Update unexpectedly exceeds 2 MB; a runtime may have been included." }
 
-      - name: Upload complete portable application
+      - name: Upload dependency-free update
         uses: actions/upload-artifact@v4
         with:
-          name: AutoCua-Windows-x64-Portable
+          name: AutoCua-LlamaPrism-Update
           path: |
-            AutoCua-Windows-x64-Portable.zip
+            AutoCua-LlamaPrism-Update.zip
             SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish tagged GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            AutoCua-Windows-x64-Portable.zip
-            SHA256SUMS.txt
-          generate_release_notes: true
+          retention-days: 90
