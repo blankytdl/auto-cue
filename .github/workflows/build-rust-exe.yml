@@ -59,7 +59,7 @@ jobs:
           # Upstream browser.rs uses cfg!(windows) for a branch which
           # still type-checks Unix-only helpers on Windows. Make that branch
           # compile-time conditional before maturin compiles the PyO3 module.
-          $browserRs = "AutoCua\web\browser\browser.rs"
+          $browserRs = "AutoCua\AutoCua\web\browser\browser.rs"
           $source = [System.IO.File]::ReadAllText($browserRs)
           $pattern = 'pub\(crate\) fn profile_locked_by_live_chrome\(profile: &PathBuf\) -> bool \{[\s\S]*?\n\}'
           $replacement = @(
