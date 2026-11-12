@@ -2,6 +2,21 @@
 
 This repository packages [AutoCua](https://github.com/ComputerUseAgent/AutoCua) with a native Rust Windows x64 launcher.
 
+## Llama Prism update (small download)
+
+For an existing installation of the earlier **AutoCua-Windows-x64-Portable** bundle, use the latest workflow artifact **AutoCua-LlamaPrism-Update** instead of downloading the full runtime again.
+
+The update ZIP contains only the changed `service.py` module, an updater PowerShell script, and instructions. It does not contain Python, the `runtime/` directory, DLLs, pip packages, or the Rust launcher.
+
+1. Download `AutoCua-LlamaPrism-Update.zip` from the latest [Build AutoCua Llama Prism Update workflow](https://github.com/blankytdl/auto-cue/actions/workflows/build-rust-exe.yml).
+2. Extract it to a temporary folder (or directly into your existing AutoCua folder).
+3. Run `Apply-LlamaPrism-Update.ps1`. When asked, enter the folder containing your existing `autocua.exe`.
+4. The updater backs up and replaces only the Ollama provider module in your existing Python runtime.
+
+No runtime dependencies are downloaded or reinstalled. This update is not a fresh standalone install; it requires the previous full portable build to already be extracted on the PC.
+
+For local llama.cpp / Llama Prism, put `OLLAMA_HOST=127.0.0.1:8080` in `%APPDATA%\AutoCua_data\.env`, start llama-prism with a tool-capable chat template (usually `--jinja`), then restart AutoCua and choose provider `ollama`.
+
 ## Full portable download
 
 Open **Actions → Build AutoCua Portable Windows App → Artifacts** and download **AutoCua-Windows-x64-Portable**. Extract the entire ZIP folder and run `autocua.exe`.
