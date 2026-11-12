@@ -44,6 +44,7 @@ fn configure_environment(root: &Path, data: &Path) {
         runtime.join("DLLs"),
         runtime.join("Scripts"),
         site.clone(),
+        site.join("pywin32_system32"),
         site.join("PySide6"),
         site.join("PySide6").join("Qt").join("bin"),
     ];
