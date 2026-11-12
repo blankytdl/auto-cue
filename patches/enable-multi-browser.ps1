@@ -13,7 +13,7 @@ $rust = [System.IO.File]::ReadAllText($rustPath)
 # Unix-only process helpers on Windows. Preserve the Windows install check and
 # compile the process-list fallback only on Unix.
 if (!$rust.Contains("AUTOCUA_WINDOWS_CFG_FIX")) {
-    $profilePattern = 'pub\\(crate\\) fn profile_locked_by_live_chrome\\(profile: &PathBuf\\) -> bool \\{[\\s\\S]*?\\n\\}'
+    $profilePattern = 'pub\(crate\) fn profile_locked_by_live_chrome\(profile: &PathBuf\) -> bool \{[\s\S]*?\n\}'
     $profileReplacement = @(
         'pub(crate) fn profile_locked_by_live_chrome(profile: &PathBuf) -> bool {',
         '    #[cfg(windows)]',
