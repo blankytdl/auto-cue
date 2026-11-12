@@ -8,7 +8,7 @@ if (!(Test-Path -LiteralPath $servicePath)) {
 }
 
 $source = [System.IO.File]::ReadAllText($servicePath)
-if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V2")) {
+if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3")) {
     Write-Host "Llama Prism compatibility patch v2 already applied."
     return
 }
@@ -16,21 +16,21 @@ if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V2")) {
 # AutoCua keeps its .env in its own data directory. load_dotenv() alone does
 # not necessarily load that file in the packaged Windows app. Read it through
 # AutoCua's public helper when OLLAMA_HOST is not already in the process env.
-$hostLine = 'raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"''")'
+$hostPattern = '(?m)^(\s*)raw = \(os\.getenv\("OLLAMA_HOST"\) or ""\)\.strip\(\)\.strip\(.*\)$'
 $hostReplacement = @'
-raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"''")
+$1raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"'")
     if not raw:
         try:
             from AutoCua import read_env
-            raw = (read_env().get("OLLAMA_HOST") or "").strip().strip("\\"''")
+            raw = (read_env().get("OLLAMA_HOST") or "").strip().strip("\\"'")
         except Exception:
             pass
 '@
-if (!$source.Contains($hostLine)) {
-    throw "Could not locate OLLAMA_HOST lookup in base_url(); refusing to patch an unexpected upstream version."
+$hostPatched = [regex]::Replace($source, $hostPattern, $hostReplacement.TrimEnd(), 1)
+if ($hostPatched -eq $source) {
+    throw "Could not patch OLLAMA_HOST lookup in base_url(); refusing to build a broken update."
 }
-$source = $source.Replace($hostLine, $hostReplacement.TrimEnd())
-
+$source = $hostPatched
 $pattern = '(?ms)^def reachable\(timeout: float = 1\.0\) -> bool:.*?(?=^class OllamaProvider:)'
 $replacement = @'
 def reachable(timeout: float = 1.0) -> bool:
@@ -43,7 +43,7 @@ def reachable(timeout: float = 1.0) -> bool:
                     return True
             except requests.exceptions.RequestException:
                 pass
-            # LLAMA_PRISM_OPENAI_COMPAT_V2: llama.cpp has no /api/version.
+            # LLAMA_PRISM_OPENAI_COMPAT_V3: llama.cpp has no /api/version.
             try:
                 response = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
                 if not response.ok:
@@ -88,7 +88,7 @@ def pulled_models(timeout: float = 2.0) -> list:
         except (requests.exceptions.RequestException, ValueError, AttributeError):
             pass
 
-        # LLAMA_PRISM_OPENAI_COMPAT_V2: /v1/models returns {"data":[{"id":...}]}.
+        # LLAMA_PRISM_OPENAI_COMPAT_V3: /v1/models returns {"data":[{"id":...}]}.
         r = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
         r.raise_for_status()
         payload = r.json()
@@ -117,7 +117,7 @@ $patched = [regex]::Replace(
 if ($patched -eq $source) {
     throw "Could not locate AutoCua's Ollama discovery functions; upstream layout changed."
 }
-if (!$patched.Contains("LLAMA_PRISM_OPENAI_COMPAT_V2") -or
+if (!$patched.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3") -or
     !$patched.Contains('read_env().get("OLLAMA_HOST")')) {
     throw "Llama Prism patch verification failed."
 }
