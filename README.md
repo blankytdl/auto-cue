@@ -29,15 +29,15 @@ The browser agent uses Chromium DevTools Protocol plus AutoCua's Chrome-compatib
 - Opera and Opera GX
 - Yandex Browser
 
-The update auto-detects the first installed browser in that order (Chrome first). To use Edge or Brave even when Chrome is also installed, set an explicit executable path in `%APPDATA%\\AutoCua_data\\.env`:
+The update auto-detects the first installed browser in that order (Chrome first). To use Edge or Brave even when Chrome is also installed, set an explicit executable path in `%APPDATA%\AutoCua_data\.env`:
 
 ```dotenv
-AUTOCUA_BROWSER=C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe
+AUTOCUA_BROWSER=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe
 ```
 
 For Edge, use the path to `msedge.exe`; for Brave, use `brave.exe`. The path must point to the browser's executable. The setting is optional; the app also checks common install folders, Windows App Paths registry entries, and PATH.
 
-For the existing portable build, download the `AutoCua-MultiBrowser-Update` artifact from the [multi-browser update workflow](https://github.com/blankytdl/auto-cue/actions/workflows/build-browser-update.yml), extract it, close AutoCua, and run `Apply-MultiBrowser-Update.ps1`. Enter the folder containing `autocua.exe`. It backs up and replaces only `agent_native.pyd` and `utils\\chrome.py`; Python, DLL dependencies and installed packages are untouched.
+For the existing portable build, download the `AutoCua-MultiBrowser-Update` artifact from the [multi-browser update workflow](https://github.com/blankytdl/auto-cue/actions/workflows/build-browser-update.yml), extract it, close AutoCua, and run `Apply-MultiBrowser-Update.ps1`. Enter the folder containing `autocua.exe`. It backs up and replaces only `agent_native.pyd` and `utils\chrome.py`; Python, DLL dependencies and installed packages are untouched.
 
 **Firefox and Safari are not supported by this backend.** It relies on Chromium's DevTools Protocol and Chrome-compatible extension APIs; supporting browsers with different automation protocols requires a separate backend.
 
