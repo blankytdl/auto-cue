@@ -33,17 +33,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $module = "AutoCua\\AutoCua\\llm_provider\\ollama\\service.py"
+          $module = Join-Path $PWD "AutoCua\AutoCua\llm_provider\ollama\service.py"
           if (!(Test-Path -LiteralPath $module)) {
             throw "Patched Ollama service module was not generated at $module"
           }
           $source = Get-Content -LiteralPath $module -Raw
-          foreach ($required in @("LLAMA_PRISM_OPENAI_COMPAT", "/v1/models", "def pulled_models")) {
+          foreach ($required in @("LLAMA_PRISM_OPENAI_COMPAT_V4", "/v1/models", "def pulled_models", 'read_env().get("OLLAMA_HOST")')) {
             if (!$source.Contains($required)) {
               throw "Llama Prism patch verification failed: missing '$required'"
             }
           }
-          Write-Host "Verified: the packaged adapter contains llama.cpp /v1/models discovery."
+          & py -3 -c "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))" $module
+          if ($LASTEXITCODE -ne 0) {
+            throw "Patched Ollama service module has invalid Python syntax."
+          }
+          Write-Host "Verified: provider config, .env lookup, Python syntax, and llama.cpp /v1/models discovery."
 
       - name: Package only the changed Python module and updater
         shell: pwsh
