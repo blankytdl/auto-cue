@@ -8,17 +8,17 @@ if (!(Test-Path -LiteralPath $servicePath)) {
 }
 
 $source = [System.IO.File]::ReadAllText($servicePath)
-if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3")) {
-    Write-Host "Llama Prism compatibility patch v3 already applied."
+if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V4")) {
+    Write-Host "Llama Prism compatibility patch v4 already applied."
     return
 }
 
 # AutoCua keeps its .env in its own data directory. load_dotenv() alone does
 # not necessarily load that file in the packaged Windows app. Read it through
 # AutoCua's public helper when OLLAMA_HOST is not already in the process env.
-$hostPattern = '(?m)^(\s*)raw = \(os\.getenv\("OLLAMA_HOST"\) or ""\)\.strip\(\)\.strip\(.*\)$'
+$hostPattern = '(?m)^    raw = .*OLLAMA_HOST.*$'
 $hostReplacement = @'
-$1raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\"'")
+    raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\"'")
     if not raw:
         try:
             from AutoCua import read_env
