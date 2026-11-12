@@ -59,14 +59,14 @@ jobs:
           # Install from the pinned upstream checkout. This builds AutoCua's
           # PyO3/maturin Rust extension and installs pyproject dependencies
           # plus the upstream Windows requirements into the bundled runtime.
-          python -m pip install --disable-pip-version-check --target $site --ignore-installed --no-compile -r $requirements .
+          python -m pip install --disable-pip-version-check --target $site --ignore-installed --no-compile -r $requirements .\AutoCua
           if ($LASTEXITCODE -ne 0) { throw "AutoCua/dependency installation failed" }
 
           # Run a smoke test against the COPIED runtime, not the runner Python.
           $env:PYTHONHOME = $runtime
           $env:PYTHONPATH = $site
           $env:PYTHONUTF8 = "1"
-          $env:PATH = "$runtime;$runtime\DLLs;$runtime\Scripts;$site;$site\PySide6;$site\PySide6\Qt\bin;$env:PATH"
+          $env:PATH = "$runtime;$runtime\DLLs;$runtime\Scripts;$site;$site\pywin32_system32;$site\PySide6;$site\PySide6\Qt\bin;$env:PATH"
           & (Join-Path $runtime "python.exe") -c "import AutoCua.agent_launcher, dotenv, webview, PySide6, win32api, comtypes, keyboard, pyautogui, flask, PIL, numpy; print('Portable runtime smoke test passed')"
           if ($LASTEXITCODE -ne 0) { throw "Bundled Python runtime failed its import smoke test" }
 
