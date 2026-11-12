@@ -35,6 +35,22 @@ if (!(Test-Path -LiteralPath $backup)) {
 }
 Copy-Item -LiteralPath $payload -Destination $target -Force
 
+# Use the Llama Prism endpoint the portable setup expects, but never
+# overwrite an endpoint the user has already configured.
+$dataDir = Join-Path $env:APPDATA "AutoCua_data"
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+$envFile = Join-Path $dataDir ".env"
+$envLines = @()
+if (Test-Path -LiteralPath $envFile) {
+    $envLines = @(Get-Content -LiteralPath $envFile)
+}
+if (-not ($envLines | Where-Object { $_ -match '^\s*OLLAMA_HOST\s*=' })) {
+    Add-Content -LiteralPath $envFile -Value "OLLAMA_HOST=127.0.0.1:8080" -Encoding utf8
+    Write-Host "Configured OLLAMA_HOST=127.0.0.1:8080 in $envFile"
+} else {
+    Write-Host "Kept your existing OLLAMA_HOST setting in $envFile"
+}
+
 Write-Host ""
 Write-Host "Llama Prism compatibility installed successfully."
 Write-Host "Previous provider backup: $backup"
