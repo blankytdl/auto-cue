@@ -43,7 +43,7 @@ def reachable(timeout: float = 1.0) -> bool:
                     return True
             except requests.exceptions.RequestException:
                 pass
-            # LLAMA_PRISM_OPENAI_COMPAT_V3: llama.cpp has no /api/version.
+            # LLAMA_PRISM_OPENAI_COMPAT_V4: llama.cpp has no /api/version.
             try:
                 response = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
                 if not response.ok:
@@ -88,7 +88,7 @@ def pulled_models(timeout: float = 2.0) -> list:
         except (requests.exceptions.RequestException, ValueError, AttributeError):
             pass
 
-        # LLAMA_PRISM_OPENAI_COMPAT_V3: /v1/models returns {"data":[{"id":...}]}.
+        # LLAMA_PRISM_OPENAI_COMPAT_V4: /v1/models returns {"data":[{"id":...}]}.
         r = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
         r.raise_for_status()
         payload = r.json()
@@ -117,7 +117,7 @@ $patched = [regex]::Replace(
 if ($patched -eq $source) {
     throw "Could not locate AutoCua's Ollama discovery functions; upstream layout changed."
 }
-if (!$patched.Contains("LLAMA_PRISM_OPENAI_COMPAT_V3") -or
+if (!$patched.Contains("LLAMA_PRISM_OPENAI_COMPAT_V4") -or
     !$patched.Contains('read_env().get("OLLAMA_HOST")')) {
     throw "Llama Prism patch verification failed."
 }
