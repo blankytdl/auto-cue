@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: autocua-multi-browser-update-\${{ github.ref }}
+  group: autocua-multi-browser-update-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
