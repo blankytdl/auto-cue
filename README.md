@@ -12,6 +12,7 @@ The update ZIP contains only the changed `service.py` module, an updater PowerSh
 2. Extract it to a temporary folder (or directly into your existing AutoCua folder).
 3. Run `Apply-LlamaPrism-Update.ps1`. When asked, enter the folder containing your existing `autocua.exe`.
 4. The updater backs up and replaces only the Ollama provider module in your existing Python runtime.
+5. If `OLLAMA_HOST` is not already set, the updater adds `OLLAMA_HOST=127.0.0.1:8080` to `%APPDATA%\AutoCua_data\.env`; an existing value is preserved.
 
 No runtime dependencies are downloaded or reinstalled. This update is not a fresh standalone install; it requires the previous full portable build to already be extracted on the PC.
 
