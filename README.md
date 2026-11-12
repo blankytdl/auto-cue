@@ -26,6 +26,31 @@ Not bundled:
 
 The portable package contains the upstream license and third-party notices. Kernel-level optional drivers are not silently installed.
 
+## Use a local llama-prism / llama.cpp server
+
+The portable build includes a compatibility patch for the existing **ollama** provider. It can discover models from the OpenAI-compatible `/v1/models` route and send chat/tool/image requests to a local `llama-server.exe`. You do not need to install or run Ollama.
+
+1. Start your Llama Prism server on the same PC, listening on `127.0.0.1:8080`. For computer-use tool calls, start it with `--jinja` so the server uses the model's tool-aware chat template.
+2. Verify its model list in PowerShell:
+
+   ```powershell
+   curl.exe http://127.0.0.1:8080/v1/models
+   ```
+
+3. Open `%APPDATA%\AutoCua_data\.env` and add:
+
+   ```dotenv
+   OLLAMA_HOST=127.0.0.1:8080
+   ```
+
+   If your server was started with an API key, also add `OLLAMA_API_KEY=your-key`. Do not put a key in the repository or share it.
+
+4. Restart AutoCua. In **Settings → Model Selection**, choose provider **ollama** and then select the exact model ID shown by `/v1/models`.
+
+For screen/desktop automation, choose a vision-capable GGUF and load its matching mmproj. For tool use, the model's chat template must support tool calls; `--jinja` enables llama.cpp's OpenAI-style function-calling path, but some model templates are more reliable than others. The compatibility layer can list models but cannot make a text-only model understand screenshots or give a model a missing tool-use template.
+
+The local endpoint is kept on loopback (`127.0.0.1`); the API key is optional unless you enabled server authentication.
+
 ## User data
 
 Credentials, conversations, browser profiles and settings are stored outside the extracted application folder:
