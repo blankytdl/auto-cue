@@ -1,0 +1,130 @@
+name: Build AutoCua Recording Toggle Update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autocua-recording-toggle-update
+  cancel-in-progress: true
+
+jobs:
+  windows-x64-update:
+    name: Build dependency-free recording settings update
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository and pinned upstream AutoCua source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python for syntax validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Apply the opt-in recording setting
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\patches\enable-recording-toggle.ps1
+
+      - name: Verify backend, frontend and default-off behavior
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ui = Join-Path $PWD "AutoCua\AutoCua\ui"
+          $service = Join-Path $ui "service.py"
+          $script = Join-Path $ui "script.js"
+          $css = Join-Path $ui "css\style.css"
+
+          foreach ($file in @($service, $script, $css)) {
+            if (!(Test-Path -LiteralPath $file)) { throw "Missing patched UI file: $file" }
+            $content = Get-Content -LiteralPath $file -Raw
+            if (!$content.Contains("AUTOCUA_RECORDING_DEFAULT_OFF_V1")) {
+              throw "Recording patch marker missing from $file"
+            }
+          }
+
+          $serviceText = Get-Content -LiteralPath $service -Raw
+          foreach ($required in @("/api/recording-setting", "recording_enabled", "is True")) {
+            if (!$serviceText.Contains($required)) { throw "Backend check missing '$required'" }
+          }
+          if ($serviceText -notmatch "record = \(agent_mode == 'computer'[\s\S]*?recording_enabled") {
+            throw "Computer Use recorder is not gated by the saved opt-in setting."
+          }
+
+          $scriptText = Get-Content -LiteralPath $script -Raw
+          foreach ($required in @("recordingEnabledToggle", "loadRecordingSetting();")) {
+            if (!$scriptText.Contains($required)) { throw "UI check missing '$required'" }
+          }
+
+          & py -3 -c "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))" $service
+          if ($LASTEXITCODE -ne 0) { throw "Python syntax validation failed." }
+          & node --check $script
+          if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax validation failed." }
+
+          Write-Host "Verified: recording defaults OFF, persists in settings.json, and only records Computer Use when enabled."
+
+      - name: Package only the three changed UI files and updater
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = Join-Path $PWD "dist\AutoCua-Recording-Toggle-Update"
+          $payload = Join-Path $bundle "payload\runtime\Lib\site-packages\AutoCua\ui"
+          New-Item -ItemType Directory -Force -Path (Join-Path $payload "css") | Out-Null
+
+          Copy-Item "AutoCua\AutoCua\ui\service.py" (Join-Path $payload "service.py") -Force
+          Copy-Item "AutoCua\AutoCua\ui\script.js" (Join-Path $payload "script.js") -Force
+          Copy-Item "AutoCua\AutoCua\ui\css\style.css" (Join-Path $payload "css\style.css") -Force
+          Copy-Item "patches\Apply-Recording-Toggle-Update.ps1" (Join-Path $bundle "Apply-Recording-Toggle-Update.ps1") -Force
+
+          @"
+          AutoCua Recording Toggle incremental update
+          ===========================================
+
+          This is a dependency-free UPDATE for an existing AutoCua-Windows-x64-Portable install.
+          It contains only three changed UI files and an updater. It does not contain Python,
+          DLLs, packages, the Rust launcher, or other runtime dependencies.
+
+          INSTALL
+          1. Close AutoCua completely.
+          2. Extract this ZIP to a temporary folder.
+          3. Open PowerShell in the extracted folder.
+          4. Run:
+             .\Apply-Recording-Toggle-Update.ps1 -InstallDir "C:\path\to\AutoCua-Windows-x64-Portable"
+             Replace the path with the folder containing autocua.exe.
+          5. Restart AutoCua and open Settings → Recording.
+
+          The setting is OFF by default. When enabled, Computer Use runs are saved locally
+          as replay videos. Browser, iOS and Android runs are not affected by this switch.
+          Older installations have no saved recording preference and therefore remain OFF.
+
+          The updater makes a .before-recording-toggle.bak beside each replaced file.
+          Existing recordings are not deleted.
+          "@ | Set-Content -Encoding utf8 (Join-Path $bundle "README.txt")
+
+          $zip = Join-Path $PWD "AutoCua-Recording-Toggle-Update.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$bundle\*" -DestinationPath $zip -CompressionLevel Optimal
+
+          $size = (Get-Item $zip).Length
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          "$hash  AutoCua-Recording-Toggle-Update.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          Write-Host "Created dependency-free update: $size bytes"
+          if ($size -gt 2MB) { throw "Update unexpectedly exceeds 2 MB." }
+
+      - name: Upload dependency-free recording update
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoCua-Recording-Toggle-Update
+          path: |
+            AutoCua-Recording-Toggle-Update.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
