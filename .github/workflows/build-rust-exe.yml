@@ -62,31 +62,31 @@ jobs:
           $browserRs = "AutoCua\web\browser\browser.rs"
           $source = [System.IO.File]::ReadAllText($browserRs)
           $pattern = 'pub\(crate\) fn profile_locked_by_live_chrome\(profile: &PathBuf\) -> bool \{[\s\S]*?\n\}'
-          $replacement = @'
-          pub(crate) fn profile_locked_by_live_chrome(profile: &PathBuf) -> bool {
-              #[cfg(windows)]
-              {
-                  return std::fs::OpenOptions::new()
-                      .write(true)
-                      .open(profile.join("lockfile"))
-                      .is_err_and(|e| e.raw_os_error() == Some(32));
-              }
-          
-              #[cfg(unix)]
-              {
-                  let target = match std::fs::read_link(profile.join("SingletonLock")) {
-                      Ok(target) => target,
-                      Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,
-                      Err(_) => return chrome_main_pid_on(profile).is_some(),
-                  };
-                  let text = target.to_string_lossy().to_string();
-                  let Some(pid) = text.rsplit('-').next().and_then(|p| p.parse::<u32>().ok()) else {
-                      return false;
-                  };
-                  live_browser_pid(pid)
-              }
-          }
-          '@          $patched = [regex]::Replace($source, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
+          $replacement = @(
+            'pub(crate) fn profile_locked_by_live_chrome(profile: &PathBuf) -> bool {',
+            '    #[cfg(windows)]',
+            '    {',
+            '        return std::fs::OpenOptions::new()',
+            '            .write(true)',
+            '            .open(profile.join("lockfile"))',
+            '            .is_err_and(|e| e.raw_os_error() == Some(32));',
+            '    }',
+            '',
+            '    #[cfg(unix)]',
+            '    {',
+            '        let target = match std::fs::read_link(profile.join("SingletonLock")) {',
+            '            Ok(target) => target,',
+            '            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return false,',
+            '            Err(_) => return chrome_main_pid_on(profile).is_some(),',
+            '        };',
+            '        let text = target.to_string_lossy().to_string();',
+            '        let Some(pid) = text.rsplit(''-'').next().and_then(|p| p.parse::<u32>().ok()) else {',
+            '            return false;',
+            '        };',
+            '        live_browser_pid(pid)',
+            '    }',
+            '}',
+          ) -join "`n"          $patched = [regex]::Replace($source, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
           if ($patched -eq $source) { throw "Could not apply the Windows cfg fix to $browserRs; upstream source layout changed." }
           [System.IO.File]::WriteAllText($browserRs, $patched, [System.Text.UTF8Encoding]::new($false))
           Write-Host "Applied Windows-only compile fix to upstream browser.rs"
