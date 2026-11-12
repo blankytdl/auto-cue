@@ -8,34 +8,49 @@ if (!(Test-Path -LiteralPath $servicePath)) {
 }
 
 $source = [System.IO.File]::ReadAllText($servicePath)
-if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT")) {
-    Write-Host "Llama Prism compatibility patch already applied."
+if ($source.Contains("LLAMA_PRISM_OPENAI_COMPAT_V2")) {
+    Write-Host "Llama Prism compatibility patch v2 already applied."
     return
 }
 
-$pattern = '(?ms)^def reachable\(timeout: float = 1\.0\) -> bool:.*?(?=^class OllamaProvider:)'
+# AutoCua keeps its .env in its own data directory. load_dotenv() alone does
+# not necessarily load that file in the packaged Windows app. Read it through
+# AutoCua's public helper when OLLAMA_HOST is not already in the process env.
+$hostLine = 'raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"''")'
+$hostReplacement = @'
+raw = (os.getenv("OLLAMA_HOST") or "").strip().strip("\\"''")
+    if not raw:
+        try:
+            from AutoCua import read_env
+            raw = (read_env().get("OLLAMA_HOST") or "").strip().strip("\\"''")
+        except Exception:
+            pass
+'@
+if (!$source.Contains($hostLine)) {
+    throw "Could not locate OLLAMA_HOST lookup in base_url(); refusing to patch an unexpected upstream version."
+}
+$source = $source.Replace($hostLine, $hostReplacement.TrimEnd())
 
+$pattern = '(?ms)^def reachable\(timeout: float = 1\.0\) -> bool:.*?(?=^class OllamaProvider:)'
 $replacement = @'
 def reachable(timeout: float = 1.0) -> bool:
     """True when Ollama or a llama.cpp/llama-prism server answers."""
     url = base_url()
     try:
         with _session(url, _key()) as session:
-            # Native Ollama discovery.
             try:
                 if session.get(f"{url}/api/version", timeout=(0.5, timeout)).ok:
                     return True
             except requests.exceptions.RequestException:
                 pass
-
-            # LLAMA_PRISM_OPENAI_COMPAT: llama.cpp and llama-prism expose
-            # OpenAI's model-list route, not Ollama's /api/version route.
+            # LLAMA_PRISM_OPENAI_COMPAT_V2: llama.cpp has no /api/version.
             try:
                 response = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
                 if not response.ok:
                     return False
                 body = response.json()
-                return isinstance(body, dict) and isinstance(body.get("data"), list)
+                entries = body.get("data") if isinstance(body, dict) else None
+                return isinstance(entries, list)
             except (requests.exceptions.RequestException, ValueError, AttributeError):
                 return False
     except requests.exceptions.RequestException:
@@ -43,18 +58,18 @@ def reachable(timeout: float = 1.0) -> bool:
 
 
 def pulled_models(timeout: float = 2.0) -> list:
-    """Return models from Ollama /api/tags or llama.cpp /v1/models."""
+    """Return Ollama models or OpenAI-compatible llama.cpp model IDs."""
     url = base_url()
     with _session(url, _key()) as session:
-        # Native Ollama: preserve its capability checks and model ordering.
+        # Native Ollama discovery first.
         try:
             r = session.get(f"{url}/api/tags", timeout=(0.5, timeout))
             if r.ok:
                 payload = r.json()
-                ollama_models = payload.get("models") if isinstance(payload, dict) else None
-                if isinstance(ollama_models, list):
+                entries = payload.get("models") if isinstance(payload, dict) else None
+                if isinstance(entries, list):
                     models = []
-                    for m in ollama_models:
+                    for m in entries:
                         name = isinstance(m, dict) and (m.get("name") or m.get("model"))
                         if not name:
                             continue
@@ -73,22 +88,19 @@ def pulled_models(timeout: float = 2.0) -> list:
         except (requests.exceptions.RequestException, ValueError, AttributeError):
             pass
 
-        # LLAMA_PRISM_OPENAI_COMPAT: /v1/models returns OpenAI model objects
-        # shaped as {"data": [{"id": "<model-id>", ...}]}.
+        # LLAMA_PRISM_OPENAI_COMPAT_V2: /v1/models returns {"data":[{"id":...}]}.
         r = session.get(f"{url}/v1/models", timeout=(0.5, timeout))
         r.raise_for_status()
         payload = r.json()
         entries = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(entries, list):
             raise ValueError("The local server's /v1/models response has no data list")
-        models = []
-        seen = set()
+        models, seen = [], set()
         for entry in entries:
             name = entry.get("id") if isinstance(entry, dict) else None
             if name and name not in seen:
-                # OpenAI-compatible servers do not expose Ollama's
-                # /api/show capabilities. Keep caps=None so AutoCua lets the
-                # server/model decide whether tools and image input are usable.
+                # Capabilities are unknown on llama.cpp; None keeps the model
+                # visible and lets its own template determine tool/vision use.
                 models.append((name, None))
                 seen.add(name)
         return models
@@ -102,10 +114,13 @@ $patched = [regex]::Replace(
     [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $replacement },
     1
 )
-
 if ($patched -eq $source) {
     throw "Could not locate AutoCua's Ollama discovery functions; upstream layout changed."
 }
+if (!$patched.Contains("LLAMA_PRISM_OPENAI_COMPAT_V2") -or
+    !$patched.Contains('read_env().get("OLLAMA_HOST")')) {
+    throw "Llama Prism patch verification failed."
+}
 
 [System.IO.File]::WriteAllText($servicePath, $patched, [System.Text.UTF8Encoding]::new($false))
-Write-Host "Applied Llama Prism compatibility to AutoCua's local provider."
+Write-Host "Applied Llama Prism compatibility v2, including AutoCua .env lookup."
