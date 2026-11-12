@@ -1,0 +1,112 @@
+name: Build AutoCua Multi-Browser Update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autocua-multi-browser-update-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64-update:
+    name: Build dependency-free multi-browser update for existing portable install
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository and pinned upstream AutoCua source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python for PyO3 ABI configuration
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Patch AutoCua browser selection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\patches\enable-multi-browser.ps1
+
+      - name: Build the updated native AutoCua extension
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:PYO3_PYTHON = (Get-Command python).Source
+          cargo build --release --manifest-path AutoCua\AutoCua\Cargo.toml
+          $native = "AutoCua\AutoCua\target\release\agent_native.dll"
+          if (!(Test-Path $native)) {
+            throw "Cargo reported success but the native extension was not found: $native"
+          }
+
+      - name: Package only the updated native module, browser detector and updater
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = Join-Path $PWD "dist\AutoCua-MultiBrowser-Update"
+          $payload = Join-Path $bundle "payload\runtime\Lib\site-packages\AutoCua"
+          New-Item -ItemType Directory -Force -Path (Join-Path $payload "utils") | Out-Null
+
+          Copy-Item "AutoCua\AutoCua\target\release\agent_native.dll" (Join-Path $payload "agent_native.pyd") -Force
+          Copy-Item "AutoCua\AutoCua\utils\chrome.py" (Join-Path $payload "utils\chrome.py") -Force
+          Copy-Item "patches\Apply-MultiBrowser-Update.ps1" (Join-Path $bundle "Apply-MultiBrowser-Update.ps1") -Force
+
+          @"
+          AutoCua Multi-Browser incremental update
+          ========================================
+
+          This is an UPDATE for an existing AutoCua-Windows-x64-Portable
+          installation. It contains only the rebuilt native AutoCua extension,
+          the Python browser discovery helper, and the PowerShell updater.
+
+          It does NOT contain Python, pip packages, runtime dependencies or
+          the autocua.exe launcher.
+
+          1. Close AutoCua completely.
+          2. Extract this ZIP.
+          3. Run Apply-MultiBrowser-Update.ps1.
+          4. Enter the folder containing your existing autocua.exe.
+
+          Auto-detection checks Chrome, Edge, Brave, Chromium, Vivaldi, Opera
+          and Yandex Browser. Chrome is preferred when several are installed.
+
+          To force a specific browser, add this line to
+          %APPDATA%\AutoCua_data\.env:
+
+            AUTOCUA_BROWSER=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe
+
+          Replace that example with the full path to msedge.exe, brave.exe,
+          chrome.exe, vivaldi.exe, opera.exe or browser.exe.
+
+          This backend uses Chromium DevTools Protocol and a Chrome-compatible
+          extension. Firefox and Safari are not supported by this backend.
+          No runtime dependencies are downloaded or installed.
+          "@ | Set-Content -Encoding utf8 (Join-Path $bundle "README.txt")
+
+          $zip = Join-Path $PWD "AutoCua-MultiBrowser-Update.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$bundle\*" -DestinationPath $zip -CompressionLevel Optimal
+
+          $size = (Get-Item $zip).Length
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          "$hash  AutoCua-MultiBrowser-Update.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          Write-Host "Created incremental multi-browser update: $size bytes"
+
+      - name: Upload incremental update
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoCua-MultiBrowser-Update
+          path: |
+            AutoCua-MultiBrowser-Update.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
