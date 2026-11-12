@@ -1,35 +1,58 @@
-# AutoCua — Rust Windows launcher
+# AutoCua — portable Rust Windows launcher
 
-This repository contains a Windows x64 Rust launcher for [AutoCua](https://github.com/ComputerUseAgent/AutoCua), plus the upstream project pinned as the `AutoCua/` Git submodule.
+This repository packages [AutoCua](https://github.com/ComputerUseAgent/AutoCua) with a native Rust Windows x64 launcher.
 
-## What is built
+## Full portable download
 
-GitHub Actions builds `autocua.exe` with the stable Rust MSVC toolchain on a Windows runner. The EXE is uploaded as a workflow artifact. Pushing a tag such as `v0.1.0` also publishes the EXE as a GitHub Release asset.
+Open **Actions → Build AutoCua Portable Windows App → Artifacts** and download **AutoCua-Windows-x64-Portable**. Extract the entire ZIP folder and run `autocua.exe`.
 
-The launcher is a native Rust bootstrapper, **not a complete Rust rewrite of the AutoCua agent**. It downloads Astral's official `uv` tool, installs a private Python 3.13 runtime, installs the published AutoCua package and opens its desktop UI. This avoids requiring Python to be preinstalled by the user. Internet access is required on first launch and a supported model provider/API credential is still required by AutoCua.
+**Python 3.13, AutoCua itself, its compiled Rust/PyO3 extension, and the Windows Python dependencies are installed by GitHub Actions and included in the portable ZIP.** The first launch does not download Python, uv, pip packages, or AutoCua. Do not copy only the EXE out of the folder: it expects the adjacent `runtime/` directory.
 
-## Download
+Versioned releases are published automatically when a `v*` tag is pushed. The release includes the portable ZIP and its SHA-256 checksum.
 
-Open **Actions → Build AutoCua Rust EXE → Artifacts** for the latest build, or **Releases** for versioned builds.
+## What is and is not bundled
 
-## Run
+Bundled:
+- CPython 3.13 runtime
+- AutoCua from the upstream submodule pinned in this repository
+- AutoCua's maturin-built native Rust extension
+- Upstream Windows requirements and Python dependencies, including the desktop UI toolkit and image/recording libraries
+- Rust `autocua.exe` launcher
 
-Double-click `autocua.exe`. First launch downloads the runtime and dependencies. User data and credentials are stored separately under `%APPDATA%\AutoCua_data`.
+Not bundled:
+- Model-provider API keys or accounts. Configure credentials in the AutoCua UI or `%APPDATA%\AutoCua_data\.env`.
+- Google Chrome. Upstream AutoCua does not install Chrome; install it separately only for browser/web-agent use.
+- Windows WebView2 Runtime, which is an OS-level webview prerequisite.
 
-Run `autocua.exe --update` to upgrade the AutoCua package in the private environment.
+The portable package contains the upstream license and third-party notices. Kernel-level optional drivers are not silently installed.
 
-## Build locally
+## User data
 
-Install the stable Rust MSVC toolchain and run:
+Credentials, conversations, browser profiles and settings are stored outside the extracted application folder:
+
+```text
+%APPDATA%\AutoCua_data\
+```
+
+You can move the extracted app folder; user data stays in the Windows profile. To update the application, download and extract the newest portable ZIP.
+
+## Build
+
+GitHub Actions builds on `windows-latest`:
+1. Checks out this repo and the pinned `AutoCua/` submodule.
+2. Installs Rust and a packaging-only Python 3.13.
+3. Builds AutoCua's PyO3 extension and installs all Windows runtime dependencies into the copied Python runtime.
+4. Smoke-tests imports using the copied runtime.
+5. Builds the Rust launcher and creates the portable ZIP.
+
+Local launcher build:
 
 ```powershell
 cargo build --manifest-path rust-launcher/Cargo.toml --release --target x86_64-pc-windows-msvc
 ```
 
-Output: `rust-launcher/target/x86_64-pc-windows-msvc/release/autocua.exe`.
+## Upstream source
 
-## Upstream
-
-- Source: https://github.com/ComputerUseAgent/AutoCua
-- Upstream is pinned as the `AutoCua/` submodule. Update it with `git submodule update --remote AutoCua`.
-- AutoCua is MIT-licensed. Keep upstream `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES.txt` available when redistributing upstream files.
+- https://github.com/ComputerUseAgent/AutoCua
+- Pinned as the `AutoCua/` Git submodule.
+- Upstream AutoCua is MIT licensed. See `LICENSE-AutoCua.txt`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES.txt` in the portable distribution.
